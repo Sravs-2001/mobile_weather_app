@@ -1,309 +1,251 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator,
-  SafeAreaView, RefreshControl, TouchableOpacity,
-  TextInput, Keyboard,
+  SafeAreaView, TouchableOpacity, TextInput, Keyboard,
+  StatusBar,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Location from 'expo-location';
-import axios from 'axios';
 
-// ─── CONFIG ──────────────────────────────────────────────────────────────────
 const API_KEY = '63cf608092032353d69e6d58d191c919';
 const BASE    = 'https://api.openweathermap.org/data/2.5';
 
-const weatherUrl  = (city)       => `${BASE}/weather?q=${city}&appid=${API_KEY}&units=metric`;
-const forecastUrl = (city)       => `${BASE}/forecast?q=${city}&appid=${API_KEY}&units=metric&cnt=40`;
-const weatherCoords  = (lat,lon) => `${BASE}/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`;
-const forecastCoords = (lat,lon) => `${BASE}/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&cnt=40`;
-
-// ─── THEMES ──────────────────────────────────────────────────────────────────
 const THEMES = {
-  Clear:        { gradient: ['#2980B9','#6DD5FA','#ffffff'], text: '#fff' },
-  Clouds:       { gradient: ['#4b6cb7','#6c8ebf','#a0b5d1'], text: '#fff' },
-  Rain:         { gradient: ['#1c3b4a','#2c5364','#4a7c8e'], text: '#e0f0ff' },
-  Drizzle:      { gradient: ['#2c5364','#4a7c8e','#6aaab8'], text: '#e0f0ff' },
-  Thunderstorm: { gradient: ['#0f0c29','#302b63','#24243e'], text: '#d0d0ff' },
-  Snow:         { gradient: ['#83a4d4','#b6fbff','#e0f0ff'], text: '#1a3a5c' },
-  Mist:         { gradient: ['#606c88','#3f4c6b','#8a9bb0'], text: '#e8eaf6' },
-  Haze:         { gradient: ['#606c88','#3f4c6b','#8a9bb0'], text: '#e8eaf6' },
+  Clear:        { bg: '#2980B9', text: '#fff' },
+  Clouds:       { bg: '#4b6cb7', text: '#fff' },
+  Rain:         { bg: '#1c3b4a', text: '#e0f0ff' },
+  Drizzle:      { bg: '#2c5364', text: '#e0f0ff' },
+  Thunderstorm: { bg: '#0f0c29', text: '#d0d0ff' },
+  Snow:         { bg: '#83a4d4', text: '#1a3a5c' },
+  Mist:         { bg: '#606c88', text: '#e8eaf6' },
+  Haze:         { bg: '#606c88', text: '#e8eaf6' },
 };
 const EMOJIS = {
   Clear:'☀️', Clouds:'☁️', Rain:'🌧️', Drizzle:'🌦️',
   Thunderstorm:'⛈️', Snow:'❄️', Mist:'🌫️', Haze:'🌫️', Fog:'🌫️',
 };
-const getTheme = (main) => THEMES[main] || THEMES.Clear;
+const getTheme = (main) => THEMES[main] || { bg: '#2980B9', text: '#fff' };
 const getEmoji = (main) => EMOJIS[main] || '🌤️';
 
-// ─── SEARCH BAR ──────────────────────────────────────────────────────────────
-function SearchBar({ onSearch, onLocate, tc }) {
-  const [q, setQ] = useState('');
-  const submit = () => { if (q.trim()) { onSearch(q.trim()); Keyboard.dismiss(); } };
-  return (
-    <View style={{ flexDirection:'row', gap:10, marginBottom:20 }}>
-      <View style={[sb.wrap, { borderColor:`${tc}55` }]}>
-        <Text style={{ fontSize:18, marginRight:8 }}>🔍</Text>
-        <TextInput
-          style={[sb.input, { color:tc }]}
-          placeholder="Search city..."
-          placeholderTextColor={`${tc}99`}
-          value={q}
-          onChangeText={setQ}
-          onSubmitEditing={submit}
-          returnKeyType="search"
-        />
-        {q.length > 0 && (
-          <TouchableOpacity onPress={() => setQ('')}>
-            <Text style={{ color:tc, fontSize:18 }}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <TouchableOpacity style={[sb.btn, { borderColor:`${tc}55` }]} onPress={onLocate}>
-        <Text style={{ fontSize:20 }}>📍</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-const sb = StyleSheet.create({
-  wrap: { flex:1, flexDirection:'row', alignItems:'center', backgroundColor:'rgba(255,255,255,0.15)', borderRadius:30, borderWidth:1, paddingHorizontal:14, paddingVertical:10 },
-  input: { flex:1, fontSize:16 },
-  btn: { backgroundColor:'rgba(255,255,255,0.15)', borderRadius:30, borderWidth:1, padding:12 },
-});
-
-// ─── WEATHER CARD ─────────────────────────────────────────────────────────────
-function WeatherCard({ w, tc }) {
-  if (!w) return null;
-  const c = w.weather[0];
-  return (
-    <View style={{ alignItems:'center', paddingVertical:10 }}>
-      <Text style={[wc.city, { color:tc }]}>{w.name}, {w.sys.country}</Text>
-      <Text style={{ color:`${tc}cc`, fontSize:15, marginTop:4 }}>
-        {new Date().toLocaleDateString('en-US',{ weekday:'long', month:'long', day:'numeric' })}
-      </Text>
-      <Text style={{ fontSize:90, marginVertical:12 }}>{getEmoji(c.main)}</Text>
-      <Text style={[wc.temp, { color:tc }]}>{Math.round(w.main.temp)}°C</Text>
-      <Text style={{ fontSize:20, fontWeight:'500', color:`${tc}dd`, marginTop:4 }}>
-        {c.description.charAt(0).toUpperCase() + c.description.slice(1)}
-      </Text>
-      <Text style={{ fontSize:15, color:`${tc}bb`, marginTop:4, marginBottom:24 }}>
-        Feels like {Math.round(w.main.feels_like)}°C
-      </Text>
-
-      <View style={[wc.row, { backgroundColor:'rgba(255,255,255,0.12)' }]}>
-        {[
-          ['🌡️','Min',`${Math.round(w.main.temp_min)}°`],
-          ['🌡️','Max',`${Math.round(w.main.temp_max)}°`],
-          ['💧','Humidity',`${w.main.humidity}%`],
-          ['💨','Wind',`${Math.round(w.wind.speed)}m/s`],
-        ].map(([icon,label,val]) => (
-          <View key={label} style={{ alignItems:'center', gap:4 }}>
-            <Text style={{ fontSize:22 }}>{icon}</Text>
-            <Text style={{ fontSize:15, fontWeight:'600', color:tc }}>{val}</Text>
-            <Text style={{ fontSize:11, color:`${tc}99` }}>{label}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={[wc.row, { backgroundColor:'rgba(255,255,255,0.08)', marginTop:10 }]}>
-        {[
-          ['👁️','Visibility',`${(w.visibility/1000).toFixed(1)}km`],
-          ['📊','Pressure',`${w.main.pressure}hPa`],
-          ['🧭','Wind Dir',`${w.wind.deg}°`],
-        ].map(([icon,label,val]) => (
-          <View key={label} style={{ alignItems:'center', gap:4 }}>
-            <Text style={{ fontSize:22 }}>{icon}</Text>
-            <Text style={{ fontSize:15, fontWeight:'600', color:tc }}>{val}</Text>
-            <Text style={{ fontSize:11, color:`${tc}99` }}>{label}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-const wc = StyleSheet.create({
-  city: { fontSize:28, fontWeight:'700' },
-  temp: { fontSize:72, fontWeight:'200', letterSpacing:-2 },
-  row:  { flexDirection:'row', justifyContent:'space-around', width:'100%', borderRadius:20, paddingVertical:16, paddingHorizontal:8 },
-});
-
-// ─── HOURLY FORECAST ─────────────────────────────────────────────────────────
-function HourlyForecast({ forecast, tc }) {
-  if (!forecast) return null;
-  return (
-    <View style={{ marginTop:20 }}>
-      <Text style={{ fontSize:18, fontWeight:'600', color:tc, marginBottom:12 }}>Hourly Forecast</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {forecast.list.slice(0,8).map((item, i) => {
-          const date = new Date(item.dt * 1000);
-          const hour = date.toLocaleTimeString('en-US',{ hour:'2-digit', minute:'2-digit', hour12:true });
-          return (
-            <View key={i} style={[hf.card, { borderColor:`${tc}33` }]}>
-              <Text style={{ fontSize:12, fontWeight:'500', color:`${tc}cc` }}>{i===0?'Now':hour}</Text>
-              <Text style={{ fontSize:26, marginVertical:6 }}>{getEmoji(item.weather[0].main)}</Text>
-              <Text style={{ fontSize:16, fontWeight:'700', color:tc }}>{Math.round(item.main.temp)}°</Text>
-              <Text style={{ fontSize:11, color:`${tc}88`, marginTop:4 }}>
-                💧{Math.round((item.pop||0)*100)}%
-              </Text>
-            </View>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
-const hf = StyleSheet.create({
-  card: { alignItems:'center', backgroundColor:'rgba(255,255,255,0.1)', borderRadius:16, borderWidth:1, paddingVertical:12, paddingHorizontal:14, marginRight:10, minWidth:72 },
-});
-
-// ─── 5-DAY FORECAST ───────────────────────────────────────────────────────────
-function ForecastCard({ forecast, tc }) {
-  if (!forecast) return null;
-  const days = {};
-  forecast.list.forEach(item => {
-    const key = new Date(item.dt*1000).toDateString();
-    if (!days[key]) days[key] = { name: new Date(item.dt*1000).toLocaleDateString('en-US',{weekday:'short'}), temps:[], main:item.weather[0].main, desc:item.weather[0].description };
-    days[key].temps.push(item.main.temp);
-  });
-  const daily = Object.values(days).slice(0,5).map(d => ({
-    ...d,
-    high: Math.round(Math.max(...d.temps)),
-    low:  Math.round(Math.min(...d.temps)),
-    desc: d.desc.charAt(0).toUpperCase()+d.desc.slice(1),
-  }));
-
-  return (
-    <View style={{ marginTop:20 }}>
-      <Text style={{ fontSize:18, fontWeight:'600', color:tc, marginBottom:12 }}>5-Day Forecast</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {daily.map((day,i) => (
-          <View key={i} style={[fc.card, { borderColor:`${tc}33` }]}>
-            <Text style={{ fontSize:13, fontWeight:'600', color:`${tc}cc`, marginBottom:6 }}>{day.name}</Text>
-            <Text style={{ fontSize:32, marginVertical:6 }}>{getEmoji(day.main)}</Text>
-            <Text style={{ fontSize:18, fontWeight:'700', color:tc }}>{day.high}°</Text>
-            <Text style={{ fontSize:14, fontWeight:'500', color:`${tc}88` }}>{day.low}°</Text>
-            <Text style={{ fontSize:10, color:`${tc}99`, marginTop:4, textAlign:'center' }}>{day.desc}</Text>
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-const fc = StyleSheet.create({
-  card: { alignItems:'center', backgroundColor:'rgba(255,255,255,0.12)', borderRadius:18, borderWidth:1, paddingVertical:14, paddingHorizontal:16, marginRight:10, minWidth:90 },
-});
-
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [weather,   setWeather]   = useState(null);
-  const [forecast,  setForecast]  = useState(null);
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState(null);
-  const [refreshing,setRefreshing]= useState(false);
-  const [lastCity,  setLastCity]  = useState(null);
-  const [useCoords, setUseCoords] = useState(false);
-  const [coords,    setCoords]    = useState(null);
+  const [weather,  setWeather]  = useState(null);
+  const [forecast, setForecast] = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState(null);
+  const [city,     setCity]     = useState('');
+  const [lastCity, setLastCity] = useState('London');
 
   const theme = weather ? getTheme(weather.weather[0].main) : getTheme('Clear');
 
-  useEffect(() => { fetchByLocation(); }, []);
-
-  async function fetchData(wUrl, fUrl) {
+  async function fetchWeather(searchCity) {
+    setLoading(true);
+    setError(null);
     try {
-      setError(null);
-      const [wRes, fRes] = await Promise.all([axios.get(wUrl), axios.get(fUrl)]);
-      setWeather(wRes.data);
-      setForecast(fRes.data);
+      const [wRes, fRes] = await Promise.all([
+        fetch(`${BASE}/weather?q=${searchCity}&appid=${API_KEY}&units=metric`),
+        fetch(`${BASE}/forecast?q=${searchCity}&appid=${API_KEY}&units=metric&cnt=40`),
+      ]);
+      if (!wRes.ok) throw new Error(wRes.status);
+      const wData = await wRes.json();
+      const fData = await fRes.json();
+      setWeather(wData);
+      setForecast(fData);
+      setLastCity(searchCity);
     } catch (err) {
-      const status = err.response?.status;
-      setError(
-        status === 404 ? 'City not found. Try another name.' :
-        status === 401 ? 'Invalid API key.' :
-        'Network error. Check your connection.'
-      );
-      setWeather(null); setForecast(null);
+      setError(err.message === '404' ? 'City not found.' : 'Failed to fetch. Try again.');
+      setWeather(null);
+      setForecast(null);
     }
-  }
-
-  async function fetchByCity(city) {
-    setLoading(true); setUseCoords(false); setLastCity(city);
-    await fetchData(weatherUrl(city), forecastUrl(city));
     setLoading(false);
   }
 
-  async function fetchByLocation() {
-    setLoading(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { await fetchByCity('London'); return; }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude: lat, longitude: lon } = loc.coords;
-      setCoords({ lat, lon }); setUseCoords(true); setLastCity(null);
-      await fetchData(weatherCoords(lat,lon), forecastCoords(lat,lon));
-    } catch { await fetchByCity('London'); }
-    finally { setLoading(false); }
+  function handleSearch() {
+    if (city.trim()) {
+      fetchWeather(city.trim());
+      Keyboard.dismiss();
+    }
   }
 
-  async function onRefresh() {
-    setRefreshing(true);
-    if (useCoords && coords) await fetchData(weatherCoords(coords.lat,coords.lon), forecastCoords(coords.lat,coords.lon));
-    else if (lastCity) await fetchData(weatherUrl(lastCity), forecastUrl(lastCity));
-    setRefreshing(false);
+  // 5-day forecast grouping
+  function getDailyForecast() {
+    if (!forecast) return [];
+    const days = {};
+    forecast.list.forEach(item => {
+      const key = new Date(item.dt * 1000).toDateString();
+      if (!days[key]) days[key] = {
+        name: new Date(item.dt * 1000).toLocaleDateString('en-US', { weekday: 'short' }),
+        temps: [],
+        main: item.weather[0].main,
+        desc: item.weather[0].description,
+      };
+      days[key].temps.push(item.main.temp);
+    });
+    return Object.values(days).slice(0, 5).map(d => ({
+      ...d,
+      high: Math.round(Math.max(...d.temps)),
+      low:  Math.round(Math.min(...d.temps)),
+    }));
   }
+
+  const tc = theme.text;
 
   return (
-    <LinearGradient colors={theme.gradient} style={{ flex:1 }}>
-      <SafeAreaView style={{ flex:1 }}>
-        <StatusBar style="light" />
-        <ScrollView
-          contentContainerStyle={{ padding:20, paddingTop:50, paddingBottom:40 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.text} />}
-        >
-          <SearchBar onSearch={fetchByCity} onLocate={fetchByLocation} tc={theme.text} />
+    <View style={[s.root, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle="light-content" />
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
+          {/* Search Bar */}
+          <View style={s.searchRow}>
+            <View style={[s.inputWrap, { borderColor: `${tc}55` }]}>
+              <Text style={s.searchIcon}>🔍</Text>
+              <TextInput
+                style={[s.input, { color: tc }]}
+                placeholder="Search city..."
+                placeholderTextColor={`${tc}88`}
+                value={city}
+                onChangeText={setCity}
+                onSubmitEditing={handleSearch}
+                returnKeyType="search"
+              />
+            </View>
+            <TouchableOpacity style={[s.searchBtn, { borderColor: `${tc}55` }]} onPress={handleSearch}>
+              <Text style={{ color: tc, fontWeight: '700' }}>Go</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Loading */}
           {loading && (
-            <View style={{ alignItems:'center', marginTop:80, gap:16 }}>
-              <ActivityIndicator size="large" color={theme.text} />
-              <Text style={{ color:theme.text, fontSize:16 }}>Fetching weather...</Text>
+            <View style={s.center}>
+              <ActivityIndicator size="large" color={tc} />
+              <Text style={{ color: tc, marginTop: 12, fontSize: 16 }}>Loading...</Text>
             </View>
           )}
 
+          {/* Error */}
           {error && !loading && (
-            <View style={{ alignItems:'center', marginTop:60, padding:30, backgroundColor:'rgba(0,0,0,0.25)', borderRadius:24, gap:12 }}>
-              <Text style={{ fontSize:48 }}>⚠️</Text>
-              <Text style={{ color:'#fff', fontSize:16, textAlign:'center', lineHeight:24 }}>{error}</Text>
-              <TouchableOpacity
-                style={{ marginTop:8, backgroundColor:'rgba(255,255,255,0.25)', paddingVertical:10, paddingHorizontal:30, borderRadius:20 }}
-                onPress={() => lastCity ? fetchByCity(lastCity) : fetchByLocation()}
-              >
-                <Text style={{ color:'#fff', fontSize:15, fontWeight:'600' }}>Retry</Text>
+            <View style={s.errorBox}>
+              <Text style={{ fontSize: 40 }}>⚠️</Text>
+              <Text style={{ color: '#fff', fontSize: 16, textAlign: 'center' }}>{error}</Text>
+              <TouchableOpacity style={s.retryBtn} onPress={() => fetchWeather(lastCity)}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Retry</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {!loading && !error && weather && (
-            <>
-              <WeatherCard w={weather} tc={theme.text} />
-              <HourlyForecast forecast={forecast} tc={theme.text} />
-              <ForecastCard forecast={forecast} tc={theme.text} />
-              <Text style={{ textAlign:'center', fontSize:12, color:`${theme.text}66`, marginTop:24 }}>
-                Updated {new Date().toLocaleTimeString()} · Pull to refresh
-              </Text>
-            </>
-          )}
-
+          {/* Welcome */}
           {!loading && !error && !weather && (
-            <View style={{ alignItems:'center', marginTop:80, gap:12 }}>
-              <Text style={{ fontSize:80 }}>🌤️</Text>
-              <Text style={{ fontSize:32, fontWeight:'700', color:theme.text }}>Weather App</Text>
-              <Text style={{ fontSize:16, color:`${theme.text}bb`, textAlign:'center', lineHeight:24 }}>
-                Search for a city or tap 📍 to get started
+            <View style={s.center}>
+              <Text style={{ fontSize: 80 }}>🌤️</Text>
+              <Text style={{ fontSize: 30, fontWeight: '700', color: tc, marginTop: 12 }}>Weather App</Text>
+              <Text style={{ fontSize: 15, color: `${tc}bb`, marginTop: 8, textAlign: 'center' }}>
+                Type a city name and tap Go
               </Text>
             </View>
           )}
+
+          {/* Weather Data */}
+          {!loading && !error && weather && (
+            <>
+              {/* City & Date */}
+              <View style={{ alignItems: 'center', marginBottom: 4 }}>
+                <Text style={{ fontSize: 28, fontWeight: '700', color: tc }}>
+                  {weather.name}, {weather.sys.country}
+                </Text>
+                <Text style={{ color: `${tc}cc`, fontSize: 14, marginTop: 4 }}>
+                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </Text>
+              </View>
+
+              {/* Main Temp */}
+              <View style={{ alignItems: 'center', marginVertical: 10 }}>
+                <Text style={{ fontSize: 90 }}>{getEmoji(weather.weather[0].main)}</Text>
+                <Text style={{ fontSize: 72, fontWeight: '200', color: tc }}>{Math.round(weather.main.temp)}°C</Text>
+                <Text style={{ fontSize: 20, color: `${tc}dd`, marginTop: 4 }}>
+                  {weather.weather[0].description.charAt(0).toUpperCase() + weather.weather[0].description.slice(1)}
+                </Text>
+                <Text style={{ fontSize: 15, color: `${tc}bb`, marginTop: 4 }}>
+                  Feels like {Math.round(weather.main.feels_like)}°C
+                </Text>
+              </View>
+
+              {/* Stats Row */}
+              <View style={[s.statsRow, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+                {[
+                  ['🌡️', 'Min',      `${Math.round(weather.main.temp_min)}°`],
+                  ['🌡️', 'Max',      `${Math.round(weather.main.temp_max)}°`],
+                  ['💧', 'Humidity', `${weather.main.humidity}%`],
+                  ['💨', 'Wind',     `${Math.round(weather.wind.speed)}m/s`],
+                ].map(([icon, label, val]) => (
+                  <View key={label} style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 22 }}>{icon}</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: tc }}>{val}</Text>
+                    <Text style={{ fontSize: 11, color: `${tc}99` }}>{label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Extra Stats */}
+              <View style={[s.statsRow, { backgroundColor: 'rgba(255,255,255,0.1)', marginTop: 10 }]}>
+                {[
+                  ['👁️', 'Visibility', `${(weather.visibility / 1000).toFixed(1)}km`],
+                  ['📊', 'Pressure',   `${weather.main.pressure}hPa`],
+                  ['🧭', 'Wind Dir',   `${weather.wind.deg}°`],
+                ].map(([icon, label, val]) => (
+                  <View key={label} style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 22 }}>{icon}</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: tc }}>{val}</Text>
+                    <Text style={{ fontSize: 11, color: `${tc}99` }}>{label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Hourly Forecast */}
+              <Text style={[s.sectionTitle, { color: tc }]}>Hourly Forecast</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {forecast.list.slice(0, 8).map((item, i) => (
+                  <View key={i} style={[s.hourCard, { borderColor: `${tc}33` }]}>
+                    <Text style={{ fontSize: 11, color: `${tc}cc` }}>
+                      {i === 0 ? 'Now' : new Date(item.dt * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    <Text style={{ fontSize: 24, marginVertical: 4 }}>{getEmoji(item.weather[0].main)}</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: tc }}>{Math.round(item.main.temp)}°</Text>
+                    <Text style={{ fontSize: 10, color: `${tc}88` }}>💧{Math.round((item.pop || 0) * 100)}%</Text>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {/* 5-Day Forecast */}
+              <Text style={[s.sectionTitle, { color: tc }]}>5-Day Forecast</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {getDailyForecast().map((day, i) => (
+                  <View key={i} style={[s.dayCard, { borderColor: `${tc}33` }]}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: `${tc}cc` }}>{day.name}</Text>
+                    <Text style={{ fontSize: 30, marginVertical: 6 }}>{getEmoji(day.main)}</Text>
+                    <Text style={{ fontSize: 17, fontWeight: '700', color: tc }}>{day.high}°</Text>
+                    <Text style={{ fontSize: 13, color: `${tc}88` }}>{day.low}°</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
+
+const s = StyleSheet.create({
+  root:      { flex: 1 },
+  scroll:    { padding: 20, paddingTop: 50, paddingBottom: 40 },
+  searchRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 30, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
+  searchIcon:{ fontSize: 16, marginRight: 8 },
+  input:     { flex: 1, fontSize: 16 },
+  searchBtn: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 30, borderWidth: 1, paddingHorizontal: 18, justifyContent: 'center' },
+  center:    { alignItems: 'center', marginTop: 80 },
+  errorBox:  { alignItems: 'center', marginTop: 60, padding: 30, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, gap: 12 },
+  retryBtn:  { backgroundColor: 'rgba(255,255,255,0.2)', paddingVertical: 10, paddingHorizontal: 28, borderRadius: 20, marginTop: 8 },
+  statsRow:  { flexDirection: 'row', justifyContent: 'space-around', borderRadius: 20, paddingVertical: 16, paddingHorizontal: 8 },
+  sectionTitle: { fontSize: 17, fontWeight: '600', marginTop: 22, marginBottom: 12 },
+  hourCard:  { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 12, marginRight: 10, minWidth: 68 },
+  dayCard:   { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 16, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 16, marginRight: 10, minWidth: 85 },
+});
